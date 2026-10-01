@@ -1,3 +1,4 @@
+
 import asyncio
 import json
 import logging
@@ -34,7 +35,7 @@ AI_MODEL = "gpt-4o"
 
 ai_client = AsyncOpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
 
-# Каталог персонажей (как в @wetdio_bot)
+# Каталог персонажей
 CHARACTERS = {
     "alice": {
         "name": "🔥 Алиса (Дерзкая и страстная)",
@@ -106,7 +107,7 @@ class AdminTokenState(StatesGroup):
     waiting_for_sub = State()
 
 
-# --- ИНТЕРФЕЙСНЫЕ КЛАВИАТУРЫ (РЕПЛИ) ---
+# --- ИНТЕРФЕЙСНЫЕ КЛАВИАТУРЫ ---
 def get_main_reply_keyboard(user_id):
     builder = ReplyKeyboardBuilder()
     builder.button(text="💬 Выбрать персонажа")
@@ -118,6 +119,16 @@ def get_main_reply_keyboard(user_id):
         builder.button(text="👑 Админ-панель")
     builder.adjust(2, 2, 1, 1)
     return builder.as_markup(resize_keyboard=True)
+
+
+MENU_BUTTONS = {
+    "💬 Выбрать персонажа",
+    "📜 Мои диалоги",
+    "⚡️ Купить энергию",
+    "👤 Профиль",
+    "🆘 Поддержка",
+    "👑 Админ-панель",
+}
 
 
 # --- ОСНОВНЫЕ КОМАНДЫ И ПРОФИЛЬ ---
@@ -154,7 +165,7 @@ async def msg_profile(message: Message):
     )
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="⚡️️ Пополнить энергию", callback_data="buy_tokens")
+    builder.button(text="⚡ Пополнить энергию", callback_data="buy_tokens")
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 
@@ -251,7 +262,7 @@ async def cb_switch_chat(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ИНТЕГРАЦИЯ ПЛАТЕЖЕЙ CRYPTOBOT (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
+# --- ИНТЕГРАЦИЯ ПЛАТЕЖЕЙ CRYPTOBOT ---
 @router.message(F.text == "⚡️ Купить энергию")
 async def msg_buy_tokens(message: Message):
     builder = InlineKeyboardBuilder()
@@ -438,19 +449,8 @@ async def cb_admin_export(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ОБРАБОТКА ИИ-ЗАПРОСОВ С АНИМАЦИЕЙ "..." ---
-@router.message(
-    F.text
-    & ~F.text.startswith("/")
-    & ~F.text.in_({
-        "💬 Выбрать персонажа",
-        "📜 Мои диалоги",
-        "⚡️ Купить энергию",
-        "👤 Профиль",
-        "🆘 Поддержка",
-        "👑 Админ-панель",
-    })
-)
+# --- ОБРАБОТКА ИИ-ЗАПРОСОВ ---
+@router.message(F.text & ~F.text.startswith("/") & ~F.text.in_(MENU_BUTTONS))
 async def handle_ai_message(message: Message):
     user_id = message.from_user.id
     user_text = message.text
@@ -526,4 +526,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
