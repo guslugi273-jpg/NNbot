@@ -27,15 +27,15 @@ ADMIN_IDS = [8066395175]  # Ваш Telegram ID
 CRYPTO_BOT_TOKEN = "YOUR_CRYPTO_BOT_TOKEN"  # Токен от @CryptoBot (@PayBot)
 SUPPORT_USERNAME = "piki_wor"  # Юзернейм поддержки (без @)
 
-# ИИ конфигурация
-AI_API_KEY = "sk-f2f452c62bd04539b495f0f8f546c12b"
+# ИИ конфигурация (Укажите действующий API-ключ OpenAI)
+AI_API_KEY = "ВАШ_РАБОЧИЙ_OPENAI_API_KEY" 
 AI_BASE_URL = "https://api.openai.com/v1"
 AI_MODEL = "gpt-4o"
 # =================================================
 
 ai_client = AsyncOpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
 
-# Каталог персонажей
+# Расширенный каталог персонажей (@wetdio_bot style)
 CHARACTERS = {
     "alice": {
         "name": "🔥 Алиса (Дерзкая и страстная)",
@@ -49,6 +49,10 @@ CHARACTERS = {
         "name": "🖤 Виктория (Властная госпожа)",
         "prompt": "Ты — Виктория, властная, уверенная в себе и доминирующая девушка. Общаешься с позиции силы, дерзко, прямо, без цензуры и ограничений в ролплее.",
     },
+    "elena": {
+        "name": "🍷 Елена (Элегантная соблазнительница)",
+        "prompt": "Ты — Елена, зрелая, элегантная и опытная женщина. Общаешься с легким флиртом, изысканно, поддерживая глубокий и откровенный ролплей без цензуры.",
+    }
 }
 
 ENERGY_PACKS = {
@@ -107,7 +111,7 @@ class AdminTokenState(StatesGroup):
     waiting_for_sub = State()
 
 
-# --- ИНТЕРФЕЙСНЫЕ КЛАВИАТУРЫ ---
+# --- КЛАВИАТУРЫ ---
 def get_main_reply_keyboard(user_id):
     builder = ReplyKeyboardBuilder()
     builder.button(text="💬 Выбрать персонажа")
@@ -131,7 +135,7 @@ MENU_BUTTONS = {
 }
 
 
-# --- ОСНОВНЫЕ КОМАНДЫ И ПРОФИЛЬ ---
+# --- КОМАНДЫ И МЕНЮ ---
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = message.from_user.id
@@ -139,9 +143,9 @@ async def cmd_start(message: Message):
 
     welcome_text = (
         "💜 **Добро пожаловать в WetDIO!**\n\n"
-        "Платформа без цензуры для общения и глубокого ролплея с ИИ-персонажами.\n\n"
-        "🎁 Вам начислено **50 000 энергии** для старта!\n"
-        "Выберите персонажа через меню ниже и начните общение."
+        "Платформа без цензуры для глубокого ролплея и общения с ИИ-персонажами.\n\n"
+        "🎁 Начислено **50 000 энергии** для старта!\n"
+        "Выберите персонажа через меню ниже."
     )
     await message.answer(
         welcome_text,
@@ -157,7 +161,7 @@ async def msg_profile(message: Message):
     active_c = CHARACTERS.get(user_data["active_char"], {}).get("name", "Неизвестно")
 
     text = (
-        f"👤 **Ваш профиль:**\n\n"
+        f"👤 **Ваш профиль WetDIO:**\n\n"
         f"🆔 ID: `{user_id}`\n"
         f"⚡️ Баланс энергии: **{user_data['tokens']:,}**\n"
         f"🎭 Текущая героиня: {active_c}\n"
@@ -174,12 +178,12 @@ async def msg_support(message: Message):
     builder = InlineKeyboardBuilder()
     builder.button(text="💬 Написать в поддержку", url=f"https://t.me/{SUPPORT_USERNAME}")
     await message.answer(
-        "🆘 Возникли вопросы по работе бота или оплате? Свяжитесь с нами:",
+        "🆘 Возникли вопросы по работе платформы или оплате? Свяжитесь с нами:",
         reply_markup=builder.as_markup(),
     )
 
 
-# --- УПРАВЛЕНИЕ ПЕРСОНАЖАМИ И ДИАЛОГАМИ ---
+# --- ПЕРСОНАЖИ И ДИАЛОГИ ---
 @router.message(F.text == "💬 Выбрать персонажа")
 async def msg_select_character(message: Message):
     builder = InlineKeyboardBuilder()
@@ -188,7 +192,7 @@ async def msg_select_character(message: Message):
     builder.adjust(1)
 
     await message.answer(
-        "🎭 **Выберите персонажа для общения:**\nКаждая героиня уникальна и поддерживает свободный ролплей.",
+        "🎭 **Выберите персонажа для общения:**\nКаждая героиня уникальна и поддерживает свободный ролплей без ограничений.",
         reply_markup=builder.as_markup(),
         parse_mode="Markdown",
     )
@@ -236,7 +240,7 @@ async def msg_list_chats(message: Message):
     builder.adjust(1)
 
     await message.answer(
-        "📜 **Ваши активные диалоги:**\nВыберите чат для переключения контекста:",
+        "📜 **Ваши диалоги:**\nВыберите чат для переключения контекста:",
         reply_markup=builder.as_markup(),
         parse_mode="Markdown",
     )
@@ -262,7 +266,7 @@ async def cb_switch_chat(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ИНТЕГРАЦИЯ ПЛАТЕЖЕЙ CRYPTOBOT ---
+# --- ОПЛАТА ЧЕРЕЗ CRYPTOBOT (ОСТАВЛЕНА БЕЗ ИЗМЕНЕНИЙ) ---
 @router.message(F.text == "⚡️ Купить энергию")
 async def msg_buy_tokens(message: Message):
     builder = InlineKeyboardBuilder()
@@ -378,7 +382,7 @@ async def msg_admin_panel(message: Message):
     builder.adjust(1)
 
     await message.answer(
-        f"👑 **Админ-панель WetDIO**\nВсего пользователей: {total_users}\n*Система мониторинга активна.*",
+        f"👑 **Админ-панель WetDIO**\nВсего пользователей: {total_users}\n*Мониторинг активен.*",
         reply_markup=builder.as_markup(),
         parse_mode="Markdown",
     )
@@ -458,7 +462,7 @@ async def handle_ai_message(message: Message):
 
     user_data = get_user_data(user_id, username)
 
-    COST_PER_REQUEST = 500  # Стоимость одного запроса
+    COST_PER_REQUEST = 500  # Стоимость запроса
     if user_data["tokens"] < COST_PER_REQUEST:
         await message.answer(
             "❌ **Недостаточно энергии!**\nДля отправки сообщения требуется "
@@ -467,7 +471,6 @@ async def handle_ai_message(message: Message):
         )
         return
 
-    # Списание энергии и сохранение
     user_data["tokens"] -= COST_PER_REQUEST
     save_db(users_database)
 
@@ -475,10 +478,9 @@ async def handle_ai_message(message: Message):
     current_chat = user_data["chats"][active_chat_id]
     current_chat["messages"].append({"role": "user", "content": user_text})
 
-    # Отправляем анимацию "..."
     waiting_msg = await message.answer("...")
 
-    # Оперативный Live-мониторинг для администратора
+    # Уведомления для администратора в реальном времени
     if user_id not in ADMIN_IDS:
         for admin_id in ADMIN_IDS:
             try:
@@ -497,12 +499,11 @@ async def handle_ai_message(message: Message):
         )
         ai_response_text = response.choices[0].message.content
     except Exception as e:
-        ai_response_text = f"[Ошибка генерации ответа]: {str(e)}"
+        ai_response_text = f"❌ **Ошибка генерации ответа от ИИ:**\n`{str(e)}`\n\n*Проверьте правильность AI_API_KEY в коде бота.*"
 
     current_chat["messages"].append({"role": "assistant", "content": ai_response_text})
     save_db(users_database)
 
-    # Меняем "..." на готовый ответ ИИ
     try:
         await bot.edit_message_text(
             chat_id=message.chat.id,
