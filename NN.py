@@ -1,6 +1,7 @@
-
 import asyncio
+import json
 import logging
+import os
 import uuid
 import aiohttp
 from aiogram import Bot, Dispatcher, F, Router
@@ -22,15 +23,18 @@ logging.basicConfig(level=logging.INFO)
 # ================= CONFIGURATION =================
 TOKEN = "8977546050:AAHXl70fhc7wE1q3QIk6w-leS0vjvCKK3x8"
 ADMIN_IDS = [8066395175]  # Ваш Telegram ID
-CRYPTO_BOT_TOKEN = "640413:AAozTIOPhVCXP62brvl6Bt8kL0vp9ticohx"  # Токен от @CryptoBot
+CRYPTO_BOT_TOKEN = "YOUR_CRYPTO_BOT_TOKEN"  # Токен от @CryptoBot (@PayBot)
 SUPPORT_USERNAME = "piki_wor"  # Юзернейм поддержки (без @)
-AI_API_KEY = "sk-f2f452c62bd04539b495f0f8f546c12b"  # Ключ от ИИ-провайдера (OpenAI / OpenRouter)
-AI_BASE_URL = "https://api.openai.com/v1"  # Эндпоинт провайдера
+
+# ИИ конфигурация
+AI_API_KEY = "sk-f2f452c62bd04539b495f0f8f546c12b"
+AI_BASE_URL = "https://api.openai.com/v1"
+AI_MODEL = "gpt-4o"
 # =================================================
 
 ai_client = AsyncOpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
 
-# Каталог персонажей в стиле ролплей-платформы без цензуры
+# Каталог персонажей (как в @wetdio_bot)
 CHARACTERS = {
     "alice": {
         "name": "🔥 Алиса (Дерзкая и страстная)",
@@ -57,20 +61,30 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 router = Router()
 
-# База данных в памяти: { user_id: { username, tokens, active_char, active_chat_id, chats } }
-users_database = {}
+DB_FILE = "database.json"
 
+# --- РАБОТА С БАЗОЙ ДАННЫХ (JSON) ---
+def load_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
-class AdminTokenState(StatesGroup):
-    waiting_for_add = State()
-    waiting_for_sub = State()
+def save_db(data):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
+users_database = load_db()
 
 def get_user_data(user_id, username="Unknown"):
-    if user_id not in users_database:
+    str_uid = str(user_id)
+    if str_uid not in users_database:
         initial_chat_id = str(uuid.uuid4())[:8]
         default_char = "alice"
-        users_database[user_id] = {
+        users_database[str_uid] = {
             "username": username,
             "tokens": 50000,  # Стартовый бонус энергии
             "active_char": default_char,
@@ -83,12 +97,16 @@ def get_user_data(user_id, username="Unknown"):
                 }
             },
         }
-    return users_database[user_id]
+        save_db(users_database)
+    return users_database[str_uid]
 
 
-# --- ИНТЕРФЕЙСНИЙ КЛАВИАТУРЫ ВНИЗУ (REPLY) ---
+class AdminTokenState(StatesGroup):
+    waiting_for_add = State()
+    waiting_for_sub = State()
 
 
+# --- ИНТЕРФЕЙСНЫЕ КЛАВИАТУРЫ (РЕПЛИ) ---
 def get_main_reply_keyboard(user_id):
     builder = ReplyKeyboardBuilder()
     builder.button(text="💬 Выбрать персонажа")
@@ -103,8 +121,6 @@ def get_main_reply_keyboard(user_id):
 
 
 # --- ОСНОВНЫЕ КОМАНДЫ И ПРОФИЛЬ ---
-
-
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = message.from_user.id
@@ -127,7 +143,7 @@ async def cmd_start(message: Message):
 async def msg_profile(message: Message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
-    active_c = CHARACTERS[user_data["active_char"]]["name"]
+    active_c = CHARACTERS.get(user_data["active_char"], {}).get("name", "Неизвестно")
 
     text = (
         f"👤 **Ваш профиль:**\n\n"
@@ -138,8 +154,7 @@ async def msg_profile(message: Message):
     )
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="⚡️ Пополнить энергию", callback_data="buy_tokens")
-
+    builder.button(text="⚡️️ Пополнить энергию", callback_data="buy_tokens")
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 
@@ -154,8 +169,6 @@ async def msg_support(message: Message):
 
 
 # --- УПРАВЛЕНИЕ ПЕРСОНАЖАМИ И ДИАЛОГАМИ ---
-
-
 @router.message(F.text == "💬 Выбрать персонажа")
 async def msg_select_character(message: Message):
     builder = InlineKeyboardBuilder()
@@ -180,7 +193,6 @@ async def cb_select_character(callback: CallbackQuery):
         await callback.answer("Персонаж не найден.", show_alert=True)
         return
 
-    # Создание изолированного чата для выбранного персонажа
     new_chat_id = str(uuid.uuid4())[:8]
     user_data["active_char"] = char_key
     user_data["active_chat_id"] = new_chat_id
@@ -189,6 +201,7 @@ async def cb_select_character(callback: CallbackQuery):
         "title": CHARACTERS[char_key]["name"],
         "messages": [{"role": "system", "content": CHARACTERS[char_key]["prompt"]}],
     }
+    save_db(users_database)
 
     await callback.message.edit_text(
         f"✨ Вы выбрали: **{CHARACTERS[char_key]['name']}**\nНовый диалог активирован. Можете писать сообщение!",
@@ -227,6 +240,7 @@ async def cb_switch_chat(callback: CallbackQuery):
     if chat_id in user_data["chats"]:
         user_data["active_chat_id"] = chat_id
         user_data["active_char"] = user_data["chats"][chat_id]["character"]
+        save_db(users_database)
         chat_title = user_data["chats"][chat_id]["title"]
         await callback.message.edit_text(
             f"✅ Успешно переключено на диалог: **{chat_title}**",
@@ -237,9 +251,7 @@ async def cb_switch_chat(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ИНТЕГРАЦИЯ ПЛАТЕЖЕЙ CRYPTOBOT ---
-
-
+# --- ИНТЕГРАЦИЯ ПЛАТЕЖЕЙ CRYPTOBOT (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
 @router.message(F.text == "⚡️ Купить энергию")
 async def msg_buy_tokens(message: Message):
     builder = InlineKeyboardBuilder()
@@ -330,6 +342,7 @@ async def cb_check_invoice(callback: CallbackQuery):
                 if data["result"]["items"][0]["status"] == "paid":
                     user_data = get_user_data(user_id)
                     user_data["tokens"] += tokens_to_add
+                    save_db(users_database)
                     await callback.message.edit_text(
                         f"✅ **Оплата прошла успешно!**\nЗачислено **{tokens_to_add:,}** энергии.",
                         parse_mode="Markdown",
@@ -341,8 +354,6 @@ async def cb_check_invoice(callback: CallbackQuery):
 
 
 # --- АДМИН-ПАНЕЛЬ ---
-
-
 @router.message(F.text == "👑 Админ-панель")
 async def msg_admin_panel(message: Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -378,6 +389,7 @@ async def process_admin_add(message: Message, state: FSMContext):
         target_id, amount = int(parts[0]), int(parts[1])
         target_data = get_user_data(target_id)
         target_data["tokens"] += amount
+        save_db(users_database)
         await message.answer(f"✅ Успешно начислено {amount:,} энергии пользователю `{target_id}`.")
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
@@ -400,6 +412,7 @@ async def process_admin_sub(message: Message, state: FSMContext):
         target_id, amount = int(parts[0]), int(parts[1])
         target_data = get_user_data(target_id)
         target_data["tokens"] = max(0, target_data["tokens"] - amount)
+        save_db(users_database)
         await message.answer(f"✅ Списано {amount:,} энергии у пользователя `{target_id}`.")
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
@@ -425,9 +438,7 @@ async def cb_admin_export(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ОБРАБОТКА ИИ-ЗАПРОСОВ И КОНТЕКСТА ---
-
-
+# --- ОБРАБОТКА ИИ-ЗАПРОСОВ С АНИМАЦИЕЙ "..." ---
 @router.message(
     F.text
     & ~F.text.startswith("/")
@@ -447,7 +458,7 @@ async def handle_ai_message(message: Message):
 
     user_data = get_user_data(user_id, username)
 
-    COST_PER_REQUEST = 500  # Стоимость одного сообщения в единицах энергии
+    COST_PER_REQUEST = 500  # Стоимость одного запроса
     if user_data["tokens"] < COST_PER_REQUEST:
         await message.answer(
             "❌ **Недостаточно энергии!**\nДля отправки сообщения требуется "
@@ -456,12 +467,16 @@ async def handle_ai_message(message: Message):
         )
         return
 
-    # Списание энергии за запрос
+    # Списание энергии и сохранение
     user_data["tokens"] -= COST_PER_REQUEST
+    save_db(users_database)
 
     active_chat_id = user_data["active_chat_id"]
     current_chat = user_data["chats"][active_chat_id]
     current_chat["messages"].append({"role": "user", "content": user_text})
+
+    # Отправляем анимацию "..."
+    waiting_msg = await message.answer("...")
 
     # Оперативный Live-мониторинг для администратора
     if user_id not in ADMIN_IDS:
@@ -478,15 +493,29 @@ async def handle_ai_message(message: Message):
 
     try:
         response = await ai_client.chat.completions.create(
-            model="gpt-4o", messages=current_chat["messages"], temperature=0.9
+            model=AI_MODEL, messages=current_chat["messages"], temperature=0.9
         )
         ai_response_text = response.choices[0].message.content
     except Exception as e:
         ai_response_text = f"[Ошибка генерации ответа]: {str(e)}"
 
     current_chat["messages"].append({"role": "assistant", "content": ai_response_text})
+    save_db(users_database)
 
-    await message.answer(ai_response_text, parse_mode="Markdown")
+    # Меняем "..." на готовый ответ ИИ
+    try:
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=waiting_msg.message_id,
+            text=ai_response_text,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=waiting_msg.message_id,
+            text=ai_response_text
+        )
 
 
 async def main():
@@ -497,3 +526,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
