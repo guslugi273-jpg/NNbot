@@ -7,8 +7,15 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from openai import AsyncOpenAI
 
 # Настройка логирования
@@ -17,8 +24,11 @@ logging.basicConfig(level=logging.INFO)
 # ================= CONFIGURATION =================
 TOKEN = "8977546050:AAHXl70fhc7wE1q3QIk6w-leS0vjvCKK3x8"
 ADMIN_IDS = [8066395175]  # Ваш Telegram ID
-CRYPTO_BOT_TOKEN = "640413:AAozTIOPhVCXP62brvl6Bt8kL0vp9ticohx"  # Токен от @CryptoBot (@PayBot)
-AI_API_KEY = "YOUR_AI_API_KEY"  # Ключ от вашего ИИ-провайдера (OpenAI / OpenRouter)
+CRYPTO_BOT_TOKEN = (
+    "640413:AAozTIOPhVCXP62brvl6Bt8kL0vp9ticohx"  # Токен от @CryptoBot (@PayBot)
+)
+SUPPORT_USERNAME = "piki_wor"  # Юзернейм поддержки (без @)
+AI_API_KEY = "sk-f2f452c62bd04539b495f0f8f546c12b"  # Ключ от вашего ИИ-провайдера (OpenAI / OpenRouter)
 AI_BASE_URL = (
     "https://api.openai.com/v1"  # Эндпоинт (или OpenRouter/локальная модель)
 )
@@ -80,20 +90,20 @@ def get_user_data(user_id, username="Unknown"):
   return users_database[user_id]
 
 
-# --- КЛАВИАТУРЫ ---
+# --- КЛАВИАТУРЫ ВНИЗУ (REPLY) ---
 
 
-def get_main_keyboard(user_id):
-  builder = InlineKeyboardBuilder()
-  builder.button(text="💬 Новый чат", callback_data="new_chat")
-  builder.button(text="📜 Мои чаты", callback_data="list_chats")
-  builder.button(text="💳 Купить токены", callback_data="buy_tokens")
-  builder.button(text="👤 Профиль / Баланс", callback_data="profile")
-  builder.button(text="🆘 Поддержка", callback_data="support")
+def get_main_reply_keyboard(user_id):
+  builder = ReplyKeyboardBuilder()
+  builder.button(text="💬 Новый чат")
+  builder.button(text="📜 Мои чаты")
+  builder.button(text="💳 Купить токены")
+  builder.button(text="👤 Профиль / Баланс")
+  builder.button(text="🆘 Поддержка")
   if user_id in ADMIN_IDS:
-    builder.button(text="👑 Админ-панель", callback_data="admin_panel")
+    builder.button(text="👑 Админ-панель")
   builder.adjust(2, 2, 1, 1)
-  return builder.as_markup()
+  return builder.as_markup(resize_keyboard=True)
 
 
 # --- ПОЛЬЗОВАТЕЛЬСКИЕ РОУТЕРЫ ---
@@ -111,23 +121,14 @@ async def cmd_start(message: Message):
   )
   await message.answer(
       welcome_text,
-      reply_markup=get_main_keyboard(user_id),
+      reply_markup=get_main_reply_keyboard(user_id),
       parse_mode="Markdown",
   )
 
 
-@router.callback_query(F.data == "main_menu")
-async def cb_main_menu(callback: CallbackQuery):
-  user_id = callback.from_user.id
-  await callback.message.edit_text(
-      "Главное меню:", reply_markup=get_main_keyboard(user_id)
-  )
-  await callback.answer()
-
-
-@router.callback_query(F.data == "profile")
-async def cb_profile(callback: CallbackQuery):
-  user_id = callback.from_user.id
+@router.message(F.text == "👤 Профиль / Баланс")
+async def msg_profile(message: Message):
+  user_id = message.from_user.id
   user_data = get_user_data(user_id)
   text = (
       f"👤 **Ваш профиль:**\n\n🆔 ID: `{user_id}`\n⚡️ Доступно токенов:"
@@ -137,21 +138,27 @@ async def cb_profile(callback: CallbackQuery):
 
   builder = InlineKeyboardBuilder()
   builder.button(text="💳 Пополнить баланс", callback_data="buy_tokens")
-  builder.button(text="🔙 В меню", callback_data="main_menu")
-  builder.adjust(1)
 
-  await callback.message.edit_text(
-      text, reply_markup=builder.as_markup(), parse_mode="Markdown"
+  await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+
+@router.message(F.text == "🆘 Поддержка")
+async def msg_support(message: Message):
+  builder = InlineKeyboardBuilder()
+  builder.button(text="💬 Написать в поддержку", url=f"https://t.me/{SUPPORT_USERNAME}")
+  await message.answer(
+      "🆘 Возникли вопросы или проблемы с оплатой? Нажмите на кнопку ниже для"
+      " связи с поддержкой:",
+      reply_markup=builder.as_markup(),
   )
-  await callback.answer()
 
 
 # --- УПРАВЛЕНИЕ ЧАТАМИ И ИСТОРИЕЙ ---
 
 
-@router.callback_query(F.data == "new_chat")
-async def cb_new_chat(callback: CallbackQuery):
-  user_id = callback.from_user.id
+@router.message(F.text == "💬 Новый чат")
+async def msg_new_chat(message: Message):
+  user_id = message.from_user.id
   user_data = get_user_data(user_id)
   new_chat_id = str(uuid.uuid4())[:8]
 
@@ -161,16 +168,15 @@ async def cb_new_chat(callback: CallbackQuery):
   }
   user_data["active_chat_id"] = new_chat_id
 
-  await callback.message.answer(
-      "✨ Создан и активирован новый чат.",
-      reply_markup=get_main_keyboard(user_id),
+  await message.answer(
+      "✨ Создан и активирован новый чат. Можете писать ваш запрос!",
+      reply_markup=get_main_reply_keyboard(user_id),
   )
-  await callback.answer()
 
 
-@router.callback_query(F.data == "list_chats")
-async def cb_list_chats(callback: CallbackQuery):
-  user_id = callback.from_user.id
+@router.message(F.text == "📜 Мои чаты")
+async def msg_list_chats(message: Message):
+  user_id = message.from_user.id
   user_data = get_user_data(user_id)
 
   builder = InlineKeyboardBuilder()
@@ -180,15 +186,13 @@ async def cb_list_chats(callback: CallbackQuery):
         text=f"{prefix}{chat_info['title']}",
         callback_data=f"switch_chat_{chat_id}",
     )
-  builder.button(text="🔙 В меню", callback_data="main_menu")
   builder.adjust(1)
 
-  await callback.message.edit_text(
+  await message.answer(
       "📜 **Ваши чаты:**\nВыберите чат для переключения контекста:",
       reply_markup=builder.as_markup(),
       parse_mode="Markdown",
   )
-  await callback.answer()
 
 
 @router.callback_query(F.data.startswith("switch_chat_"))
@@ -202,7 +206,6 @@ async def cb_switch_chat(callback: CallbackQuery):
     chat_title = user_data["chats"][chat_id]["title"]
     await callback.message.edit_text(
         f"✅ Успешно переключено на чат: **{chat_title}**",
-        reply_markup=get_main_keyboard(user_id),
         parse_mode="Markdown",
     )
   else:
@@ -213,14 +216,29 @@ async def cb_switch_chat(callback: CallbackQuery):
 # --- ПЛАТЕЖНАЯ СИСТЕМА CRYPTOBOT ---
 
 
-@router.callback_query(F.data == "buy_tokens")
-async def cb_buy_tokens(callback: CallbackQuery):
+@router.message(F.text == "💳 Купить токены")
+async def msg_buy_tokens(message: Message):
   builder = InlineKeyboardBuilder()
   for pack_key, pack in TOKEN_PACKS.items():
     builder.button(
         text=pack["title"], callback_data=f"buy_pack_{pack_key}"
     )
-  builder.button(text="🔙 В меню", callback_data="main_menu")
+  builder.adjust(1)
+
+  await message.answer(
+      "💳 **Выберите пакет токенов:**\nОплата через @CryptoBot в USDT/TON.",
+      reply_markup=builder.as_markup(),
+      parse_mode="Markdown",
+  )
+
+
+@router.callback_query(F.data == "buy_tokens")
+async def cb_buy_tokens_redirect(callback: CallbackQuery):
+  builder = InlineKeyboardBuilder()
+  for pack_key, pack in TOKEN_PACKS.items():
+    builder.button(
+        text=pack["title"], callback_data=f"buy_pack_{pack_key}"
+    )
   builder.adjust(1)
 
   await callback.message.edit_text(
@@ -244,9 +262,11 @@ async def cb_create_invoice(callback: CallbackQuery):
   headers = {"Crypto-Pay-API-Token": CRYPTO_BOT_TOKEN}
   payload = {
       "asset": "USDT",
-      "amount": str(pack["price"]),
+      "amount": f"{pack['price']:.2f}",
       "description": f"Покупка {pack['tokens']:,} токенов в UnlockAI",
       "payload": f"{user_id}:{pack['tokens']}",
+      "allow_anonymous": False,
+      "allow_comments": False,
   }
 
   async with aiohttp.ClientSession() as session:
@@ -262,7 +282,6 @@ async def cb_create_invoice(callback: CallbackQuery):
                 f"check_invoice_{invoice['invoice_id']}_{pack['tokens']}"
             ),
         )
-        builder.button(text="🔙 Назад", callback_data="buy_tokens")
         builder.adjust(1)
 
         await callback.message.edit_text(
@@ -273,7 +292,8 @@ async def cb_create_invoice(callback: CallbackQuery):
             parse_mode="Markdown",
         )
       else:
-        await callback.answer("Ошибка создания счета.", show_alert=True)
+        err_msg = data.get("error", {}).get("name", "Неизвестная ошибка")
+        await callback.answer(f"Ошибка создания счета: {err_msg}", show_alert=True)
   await callback.answer()
 
 
@@ -297,7 +317,6 @@ async def cb_check_invoice(callback: CallbackQuery):
           await callback.message.edit_text(
               f"✅ **Оплата прошла успешно!**\nЗачислено"
               f" **{tokens_to_add:,}** токенов.",
-              reply_markup=get_main_keyboard(user_id),
               parse_mode="Markdown",
           )
         else:
@@ -309,10 +328,9 @@ async def cb_check_invoice(callback: CallbackQuery):
 # --- АДМИН-ПАНЕЛЬ И LIVE МОНИТОРИНГ ---
 
 
-@router.callback_query(F.data == "admin_panel")
-async def cb_admin_panel(callback: CallbackQuery):
-  if callback.from_user.id not in ADMIN_IDS:
-    await callback.answer("Доступ запрещен.", show_alert=True)
+@router.message(F.text == "👑 Админ-панель")
+async def msg_admin_panel(message: Message):
+  if message.from_user.id not in ADMIN_IDS:
     return
 
   total_users = len(users_database)
@@ -326,16 +344,14 @@ async def cb_admin_panel(callback: CallbackQuery):
   builder.button(
       text="📥 Выгрузить все чаты (TXT)", callback_data="admin_export_all"
   )
-  builder.button(text="🔙 В главное меню", callback_data="main_menu")
   builder.adjust(1)
 
-  await callback.message.edit_text(
+  await message.answer(
       f"👑 **Админ-панель**\nВсего пользователей в памяти: {total_users}\n*Live"
       " режим логгирования активен.*",
       reply_markup=builder.as_markup(),
       parse_mode="Markdown",
   )
-  await callback.answer()
 
 
 @router.callback_query(F.data == "admin_add_tokens")
@@ -420,19 +436,21 @@ async def cb_admin_export(callback: CallbackQuery):
   await callback.answer()
 
 
-@router.callback_query(F.data == "support")
-async def cb_support(callback: CallbackQuery):
-  await callback.message.answer(
-      "🆘 Поддержка работает.",
-      reply_markup=get_main_keyboard(callback.from_user.id),
-  )
-  await callback.answer()
-
-
 # --- ОБРАБОТКА ИИ И БАЛАНСА ---
 
 
-@router.message(F.text & ~F.text.startswith("/"))
+@router.message(
+    F.text
+    & ~F.text.startswith("/")
+    & ~F.text.in_({
+        "💬 Новый чат",
+        "📜 Мои чаты",
+        "💳 Купить токены",
+        "👤 Профиль / Баланс",
+        "🆘 Поддержка",
+        "👑 Админ-панель",
+    })
+)
 async def handle_ai_message(message: Message):
   user_id = message.from_user.id
   user_text = message.text
@@ -446,7 +464,6 @@ async def handle_ai_message(message: Message):
         "❌ **Недостаточно токенов!**\nДля запроса требуется"
         f" **{COST_PER_REQUEST:,}** токенов, а на балансе:"
         f" **{user_data['tokens']:,}**.\n\nПополните баланс в меню.",
-        reply_markup=get_main_keyboard(user_id),
         parse_mode="Markdown",
     )
     return
@@ -483,11 +500,7 @@ async def handle_ai_message(message: Message):
       {"role": "assistant", "content": ai_response_text}
   )
 
-  await message.answer(
-      ai_response_text,
-      reply_markup=get_main_keyboard(user_id),
-      parse_mode="Markdown",
-  )
+  await message.answer(ai_response_text, parse_mode="Markdown")
 
 
 async def main():
@@ -498,3 +511,4 @@ async def main():
 
 if __name__ == "__main__":
   asyncio.run(main())
+
