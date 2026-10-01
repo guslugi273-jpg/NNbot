@@ -28,7 +28,7 @@ CRYPTO_BOT_TOKEN = "YOUR_CRYPTO_BOT_TOKEN"  # Токен от @CryptoBot (@PayBo
 SUPPORT_USERNAME = "piki_wor"  # Юзернейм поддержки (без @)
 
 # ИИ конфигурация (Укажите действующий API-ключ OpenAI)
-AI_API_KEY = "ВАШ_РАБОЧИЙ_OPENAI_API_KEY" 
+AI_API_KEY = "sk-0a1d7959fed8472183ac8e6090373e89" 
 AI_BASE_URL = "https://api.openai.com/v1"
 AI_MODEL = "gpt-4o"
 # =================================================
