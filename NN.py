@@ -15,9 +15,9 @@ from openai import AsyncOpenAI
 logging.basicConfig(level=logging.INFO)
 
 # ================= CONFIGURATION =================
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-ADMIN_IDS = [123456789]  # Ваш Telegram ID
-CRYPTO_BOT_TOKEN = "YOUR_CRYPTO_BOT_API_TOKEN"  # Токен от @CryptoBot (@PayBot)
+TOKEN = "8977546050:AAHXl70fhc7wE1q3QIk6w-leS0vjvCKK3x8"
+ADMIN_IDS = [8066395175]  # Ваш Telegram ID
+CRYPTO_BOT_TOKEN = "640413:AAozTIOPhVCXP62brvl6Bt8kL0vp9ticohx"  # Токен от @CryptoBot (@PayBot)
 AI_API_KEY = "YOUR_AI_API_KEY"  # Ключ от вашего ИИ-провайдера (OpenAI / OpenRouter)
 AI_BASE_URL = (
     "https://api.openai.com/v1"  # Эндпоинт (или OpenRouter/локальная модель)
